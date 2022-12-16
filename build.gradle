@@ -1,27 +1,28 @@
 buildscript {
     repositories {
-        jcenter()
-
+        gradlePluginPortal()
         maven {
-            url = "https://files.minecraftforge.net/maven"
+            url = "https://maven.minecraftforge.net/"
         }
     }
 
     dependencies {
-        classpath 'net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT'
-        classpath "com.github.jengelman.gradle.plugins:shadow:1.2.3"
+        classpath 'net.minecraftforge.gradle:ForgeGradle:4.+'
+        classpath "com.github.jengelman.gradle.plugins:shadow:6.1.0"
     }
 }
 
-apply plugin: 'net.minecraftforge.gradle.forge'
+apply plugin: 'net.minecraftforge.gradle'
 //Only edit below this line, the above code adds and enables the necessary things for Forge to be setup.
-
 apply plugin: "com.github.johnrengelman.shadow"
+apply plugin: 'idea'
+apply plugin: 'signing'
 
 version = "3.2.0"
 group = "me.rigamortis"
 archivesBaseName = "seppuku"
 def buildmode = "IDE"
+def mcVersion = "1.12.2"
 
 sourceCompatibility = targetCompatibility = '1.8' // Need this here so eclipse task generates correctly.
 compileJava {
@@ -37,20 +38,32 @@ idea {
 }
 
 minecraft {
-    version = "1.12.2-14.23.5.2847"
-    runDir = "run"
+    mappings channel: "stable", version: "39-1.12"
+    accessTransformer = file('src/main/resources/seppuku_at.cfg')
 
-    // the mappings can be changed at any time, and must be in the following format.
-    // snapshot_YYYYMMDD   snapshot are built nightly.
-    // stable_#            stables are built at the discretion of the MCP team.
-    // Use non-default mappings at your own risk. they may not always work.
-    // simply re-run your setup task after changing the mappings to update your workspace.
-    mappings = "stable_39"
-    // makeObfSourceJar = false // an Srg named sources jar is made by default. uncomment this to disable.
+
+    runs {
+        client {
+            workingDirectory project.file('run')
+
+            // Recommended logging data for a userdev environment
+            property 'forge.logging.markers', 'SCAN,REGISTRIES,REGISTRYDUMP'
+
+            // Recommended logging level for the console
+            property 'forge.logging.console.level', 'debug'
+
+            property 'fml.coreMods.load', 'me.rigamortis.seppuku.impl.fml.core.SeppukuLoadingPlugin'
+        }
+    }
+}
+
+repositories {
+    mavenCentral()
 }
 
 dependencies {
-    compile group: "com.googlecode.json-simple", name: "json-simple", version: "1.1.1"
+    minecraft "net.minecraftforge:forge:1.12.2-14.23.5.2860"
+    implementation group: "com.googlecode.json-simple", name: "json-simple", version: "1.1.1"
 }
 
 jar {
@@ -62,13 +75,7 @@ jar {
 }
 
 reobf {
-    jar {
-        mappingType = 'SEARGE'
-    }
-
     shadowJar {
-        //mappingType = 'NOTCH'
-        mappingType = 'SEARGE'
         classpath = sourceSets.main.compileClasspath
     }
 }
@@ -76,7 +83,7 @@ reobf {
 shadowJar {
     dependencies {
         include(dependency('com.googlecode.json-simple:json-simple:1.1.1'))
-        include(dependency('net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT'))
+        //include(dependency('net.minecraftforge.gradle:ForgeGradle:2.3-SNAPSHOT'))
     }
 
     manifest {
@@ -90,7 +97,7 @@ shadowJar {
     classifier = 'full'
 }
 
-task signJar(type: SignJar, dependsOn: reobfJar) {
+/**task signJar(type: Sign) {
     onlyIf {
         project.hasProperty('keyStore')
     }
@@ -101,6 +108,29 @@ task signJar(type: SignJar, dependsOn: reobfJar) {
     keyPass = project.findProperty('keyStoreKeyPass')
     inputFile = jar.archivePath
     outputFile = jar.archivePath
+}
+*/
+
+task signJar {
+    onlyIf {
+        project.hasProperty('keyStore')
+    }
+
+    def signdir  = new File("$buildDir/jars/signed")
+    signdir.mkdirs()
+
+    ant.signjar(
+            destDir: "${signdir.absolutePath}",
+            jar: 'build/jars/*.jar',
+            alias: project.findProperty('keyStoreAlias'),
+            storetype: "jks",
+            keystore: project.findProperty('keyStore'),
+            keypass: project.findProperty('keyStoreKeyPass'),
+            storepass: project.findProperty('keyStorePass'),
+            verbose: true,
+            preservelastmodified: "true"
+    )
+
 }
 
 build.dependsOn {
@@ -114,14 +144,14 @@ build.dependsOn {
 processResources {
     // this will ensure that this task is redone when the versions change.
     inputs.property "version", project.version
-    inputs.property "mcversion", project.minecraft.version
+    inputs.property "mcversion", mcVersion
 
     // replace stuff in mcmod.info, nothing else
     from(sourceSets.main.resources.srcDirs) {
         include 'mcmod.info'
 
         // replace version and mcversion
-        expand 'version': project.version, 'mcversion': project.minecraft.version
+        expand 'version': project.version, 'mcversion': mcVersion
     }
 
     // copy everything else except the mcmod.info
@@ -132,8 +162,8 @@ processResources {
 
 if (buildmode == "IDE") {
     sourceSets {
-        main(({
-            output.resourcesDir = output.classesDir
-        }))
+        main {
+            output.resourcesDir = java.outputDir
+        }
     }
 }
